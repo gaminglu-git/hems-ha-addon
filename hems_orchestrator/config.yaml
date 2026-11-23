@@ -1,6 +1,6 @@
 name: "HEMS Grid-Supportive Orchestrator"
 description: "Netzdienliches HEMS mit EMHASS-Kopplung, §14a EnWG Prioritätskaskade und revisionssicherem Decision-Trace-Logging"
-version: "0.1.0"
+version: "0.1.1"
 slug: "hems_orchestrator"
 init: false
 arch:
