@@ -24,7 +24,7 @@ docker build -t hems_orchestrator:0.1.0 .
 docker run --rm hems_orchestrator:0.1.0 python3 -c "import hems.main; print('import ok')"
 ```
 
-Erwartung: `import ok`. Der Container verwendet `python:3.12-slim-bookworm` (siehe `build.yaml`), installiert via `pip install --no-cache-dir .` und erwartet `/data/logs`, `/data/db`, `/tmp/hems_cache` (vom `run.sh` angelegt).
+Erwartung: `import ok`. Der Container verwendet `ghcr.io/home-assistant/base:latest` (siehe `build.yaml`), installiert Python/pip via `apk`, das Paket in `/opt/venv` via `pip install --no-cache-dir .` und erwartet `/data/logs`, `/data/db`, `/tmp/hems_cache` (vom `run.sh` angelegt). Da die HA-Basis `ENTRYPOINT ["/init"]` (s6) setzt, überschreibt das Dockerfile dies mit `ENTRYPOINT []` – konsistent zu `init: false` in `config.yaml`.
 
 > **Hinweis:** Der Container startet ohne `/data/options.json` mit den Defaults aus `config.py` (`dry_run=True`, `mqtt_host=core-mosquitto`). Ohne erreichbares MQTT/EMHASS läuft er in den Prio-4-Fallback – das ist erwartungskonform, kein Fehler.
 

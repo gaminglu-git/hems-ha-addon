@@ -99,18 +99,21 @@ schema:
 
 ```yaml
 build_from:
-  aarch64: "python:3.12-slim-bookworm"
-  amd64: "python:3.12-slim-bookworm"
+  aarch64: "ghcr.io/home-assistant/base:latest"
+  amd64: "ghcr.io/home-assistant/base:latest"
 ```
+
+> Begründung: Der HA Supervisor baut Add-ons aus der `ghcr.io/home-assistant/base`-Familie (Alpine, s6-overlay, bashio). Ein reines `python:3.12-slim-bookworm` liefert zwar pip, entspricht aber nicht der HA-Laufzeitumgebung; umgekehrt fehlt der HA-Basis Python/pip → deshalb der explizite `apk`-Schritt im Dockerfile.
 
 ### Dockerfile
 
 Anforderungen:
 
-- Base-Image `ARG BUILD_FROM=python:3.12-slim-bookworm`
+- Base-Image `ARG BUILD_FROM=ghcr.io/home-assistant/base:latest` (Alpine) und `apk add --no-cache python3 py3-pip`.
 - Setze `PYTHONDONTWRITEBYTECODE=1`, `PYTHONUNBUFFERED=1`, `TMPDIR=/tmp`.
+- Installiere das Paket in `/opt/venv` via `python3 -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir .` (vermeidet PEP-668 „externally-managed-environment" auf Alpine); `ENV PATH="/opt/venv/bin:$PATH"`.
+- `ENTRYPOINT []`: Die HA-Basis setzt `ENTRYPOINT ["/init"]` (s6-overlay v3); bei `init: false` in `config.yaml` wird dieser überschrieben, damit `CMD ["/run.sh"]` direkt läuft.
 - Installiere keine unnötigen Build-Tools im finalen Image.
-- Kopiere `pyproject.toml` und `src/`; installiere das Paket im Dockerfile mit exakt `RUN pip install --no-cache-dir .` (kein `..`, kein Verweis auf ein Parent-Verzeichnis).
 - Erstelle Verzeichnisse `/data/logs`, `/data/db`, `/tmp/hems_cache`.
 - Kopiere `run.sh`, setze `chmod a+x /run.sh`, `CMD ["/run.sh"]`.
 
