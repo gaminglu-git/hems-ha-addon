@@ -1,0 +1,80 @@
+name: "HEMS Grid-Supportive Orchestrator"
+description: "Netzdienliches HEMS mit EMHASS-Kopplung, §14a EnWG Prioritätskaskade und revisionssicherem Decision-Trace-Logging"
+version: "0.1.0"
+slug: "hems_orchestrator"
+init: false
+arch:
+  - aarch64
+  - amd64
+startup: application
+boot: auto
+services:
+  - mqtt:need
+hassio_api: true
+homeassistant_api: true
+map:
+  - share:ro
+options:
+  operating_mode: "C_GRID_SUPPORTIVE"
+  dry_run: true
+  log_level: "INFO"
+  mqtt_host: "core-mosquitto"
+  mqtt_port: 1883
+  mqtt_username: ""
+  mqtt_password: ""
+  mqtt_topic_prefix: "hems"
+  emhass_url: "http://a0d7b954-emhass:5000"
+  emhass_timeout_s: 15.0
+  mpc_interval_s: 900
+  control_loop_interval_s: 1.0
+  verification_delay_s: 10.0
+  house_fuse_limit_w: 22000.0
+  pv_peak_w: 10000.0
+  eeg_feedin_limit_pct: 60.0
+  dso_14a_min_power_w: 4200.0
+  battery_capacity_wh: 10000.0
+  battery_max_charge_w: 5000.0
+  battery_max_discharge_w: 5000.0
+  battery_cycle_cost_ct_kwh: 5.0
+  wallbox_max_power_w: 11000.0
+  wallbox_min_power_w: 1380.0
+  heatpump_nominal_power_w: 2500.0
+  heatpump_temp_min_c: 45.0
+  heatpump_temp_max_c: 58.0
+  ev_target_soc_pct: 80.0
+  ev_capacity_wh: 60000.0
+  jsonl_max_bytes: 10485760
+  jsonl_backup_count: 10
+  audit_heartbeat_s: 60
+schema:
+  operating_mode: list(A_BASELINE|B_MARKET_ORIENTED|C_GRID_SUPPORTIVE)
+  dry_run: bool
+  log_level: list(DEBUG|INFO|WARNING|ERROR)
+  mqtt_host: str
+  mqtt_port: port
+  mqtt_username: str?
+  mqtt_password: password?
+  mqtt_topic_prefix: str
+  emhass_url: url
+  emhass_timeout_s: float(1.0,60.0)
+  mpc_interval_s: int(60,3600)
+  control_loop_interval_s: float(0.5,5.0)
+  verification_delay_s: float(1.0,60.0)
+  house_fuse_limit_w: float(3000.0,63000.0)
+  pv_peak_w: float(0.0,100000.0)
+  eeg_feedin_limit_pct: float(0.0,100.0)
+  dso_14a_min_power_w: float(4200.0,22000.0)
+  battery_capacity_wh: float(0.0,100000.0)
+  battery_max_charge_w: float(0.0,25000.0)
+  battery_max_discharge_w: float(0.0,25000.0)
+  battery_cycle_cost_ct_kwh: float(0.0,50.0)
+  wallbox_max_power_w: float(0.0,22000.0)
+  wallbox_min_power_w: float(0.0,4200.0)
+  heatpump_nominal_power_w: float(0.0,15000.0)
+  heatpump_temp_min_c: float(20.0,60.0)
+  heatpump_temp_max_c: float(30.0,75.0)
+  ev_target_soc_pct: float(10.0,100.0)
+  ev_capacity_wh: float(10000.0,150000.0)
+  jsonl_max_bytes: int(1048576,104857600)
+  jsonl_backup_count: int(1,50)
+  audit_heartbeat_s: int(5,3600)

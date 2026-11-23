@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hems-orchestrator"
+version = "0.1.0"
+description = "Netzdienliches HEMS mit EMHASS-Kopplung, §14a EnWG Prioritätskaskade und revisionssicherem Decision-Trace-Logging"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.9,<3.0",
+    "pydantic-settings>=2.5,<3.0",
+    "httpx>=0.27,<1.0",
+    "aiomqtt>=2.3,<3.0",
+    "aiosqlite>=0.20,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "respx>=0.21",
+    "ruff>=0.7",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+# UP042: Die Spezifikation (docs/01) schreibt explizit `OperatingMode(str, Enum)` vor.
+ignore = ["UP042"]
