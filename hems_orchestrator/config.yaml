@@ -12,6 +12,10 @@ services:
   - mqtt:need
 hassio_api: true
 homeassistant_api: true
+ingress: true
+ingress_port: 8099
+panel_icon: "mdi:flash-auto"
+panel_title: "HEMS Orchestrator"
 map:
   - share:ro
 options:
@@ -46,6 +50,14 @@ options:
   jsonl_max_bytes: 10485760
   jsonl_backup_count: 10
   audit_heartbeat_s: 60
+  ha_api_url: "http://supervisor/core/api"
+  ha_token: ""
+  ingress_port: 8099
+  pattern_lookback_days: 14
+  pattern_retrain_interval_s: 21600.0
+  auto_discover_washdata: true
+  timezone: "Europe/Berlin"
+  ingress_only: true
 schema:
   operating_mode: list(A_BASELINE|B_MARKET_ORIENTED|C_GRID_SUPPORTIVE)
   dry_run: bool
@@ -78,3 +90,11 @@ schema:
   jsonl_max_bytes: int(1048576,104857600)
   jsonl_backup_count: int(1,50)
   audit_heartbeat_s: int(5,3600)
+  ha_api_url: url
+  ha_token: str?
+  ingress_port: int(1024,65535)
+  pattern_lookback_days: int(3,60)
+  pattern_retrain_interval_s: float(300.0,86400.0)
+  auto_discover_washdata: bool
+  timezone: str
+  ingress_only: bool

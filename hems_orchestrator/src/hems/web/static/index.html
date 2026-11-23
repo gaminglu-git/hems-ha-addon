@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HEMS Orchestrator</title>
+<style>
+  :root {
+    --bg: #0f1115; --surface: #181b21; --surface2: #21252e; --text: #e8eaf0;
+    --muted: #9aa3b5; --accent: #4f9dff; --accent2: #ffb454; --ok: #4caf82;
+    --warn: #ff6b6b; --border: #2c313c; --radius: 12px;
+  }
+  body.light {
+    --bg: #f5f6f8; --surface: #ffffff; --surface2: #eef1f6; --text: #1d2430;
+    --muted: #5c667a; --accent: #2f7fe0; --accent2: #d98200; --ok: #2e9b6e;
+    --warn: #d64545; --border: #d9dee7;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 14px; }
+  header { display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 20px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  header h1 { margin: 0; font-size: 18px; letter-spacing: .2px; }
+  .muted { color: var(--muted); }
+  button, select, input { font: inherit; color: var(--text); background: var(--surface2);
+    border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); color: #fff; border-color: transparent; }
+  button.danger { background: var(--warn); color: #fff; border-color: transparent; }
+  .tabs { display: flex; gap: 6px; padding: 12px 20px 0; flex-wrap: wrap; }
+  .tabs button.active { background: var(--accent); color: #fff; }
+  main { padding: 16px 20px 40px; }
+  .tab { display: none; }
+  .tab.active { display: block; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px; }
+  .card h3 { margin: 0 0 6px; font-size: 13px; color: var(--muted); font-weight: 600; }
+  .card .value { font-size: 24px; font-weight: 700; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px; margin-top: 16px; }
+  .banner { display: none; background: rgba(255,107,107,.15); border: 1px solid var(--warn);
+    color: var(--warn); padding: 10px 12px; border-radius: 8px; margin-top: 12px; font-weight: 600; }
+  .banner.show { display: block; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px;
+    background: var(--surface2); border: 1px solid var(--border); color: var(--muted); }
+  .badge.ok { color: var(--ok); border-color: var(--ok); }
+  .badge.warn { color: var(--accent2); border-color: var(--accent2); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-size: 12px; }
+  .bar { height: 8px; background: var(--surface2); border-radius: 6px; overflow: hidden; min-width: 90px; }
+  .bar > div { height: 100%; background: var(--accent); }
+  #chart { width: 100%; min-height: 280px; }
+  .chip { margin: 4px; padding: 8px 10px; border-radius: 10px; background: var(--surface2);
+    border: 1px solid var(--border); cursor: pointer; }
+  .chip.selected { border-color: var(--accent); }
+  label { display: block; margin: 8px 0 3px; color: var(--muted); font-size: 12px; }
+  input[type=text], input[type=number], select { width: 100%; }
+  .grid-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 4px 12px; }
+  .list-item { display: flex; justify-content: space-between; gap: 12px; align-items: center;
+    padding: 10px 0; border-bottom: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<header>
+  <h1>HEMS Orchestrator</h1>
+  <div class="row">
+    <span class="muted" id="header-status">Lade Status…</span>
+    <button id="theme-toggle" type="button">Design wechseln</button>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button type="button" class="active" data-tab="overview">Übersicht &amp; Live-Regelung</button>
+  <button type="button" data-tab="forecasts">Einzelverbraucher-Prognosen</button>
+  <button type="button" data-tab="patterns">Erkannte Schaltmuster</button>
+  <button type="button" data-tab="devices">Verbraucher &amp; Geräte</button>
+</nav>
+
+<main>
+  <section id="tab-overview" class="tab active">
+    <div class="cards">
+      <div class="card"><h3>Netzleistung</h3><div class="value" id="card-grid">–</div></div>
+      <div class="card"><h3>PV-Erzeugung</h3><div class="value" id="card-pv">–</div></div>
+      <div class="card"><h3>Batterie-SoC</h3><div class="value" id="card-soc">–</div></div>
+      <div class="card"><h3>§ 14a EnWG</h3><div class="value" id="card-14a">–</div></div>
+    </div>
+    <div class="panel">
+      <h3>Schnellsteuerung</h3>
+      <div class="row">
+        <label for="mode-select" style="margin:0">Betriebsmodus</label>
+        <select id="mode-select">
+          <option value="A_BASELINE">A_BASELINE</option>
+          <option value="B_MARKET_ORIENTED">B_MARKET_ORIENTED</option>
+          <option value="C_GRID_SUPPORTIVE">C_GRID_SUPPORTIVE</option>
+        </select>
+        <label for="dry-toggle" style="margin:0">Shadow-Mode (dry_run)</label>
+        <input id="dry-toggle" type="checkbox" checked>
+      </div>
+      <div id="shadow-banner" class="banner">ACHTUNG: Shadow-Mode ist deaktiviert – reale Aktoren können geschaltet werden!</div>
+    </div>
+    <div class="panel">
+      <h3>Aktive Haushalts-Integrationen</h3>
+      <div id="washdata-live" class="muted">Keine WashData-Geräte erkannt.</div>
+    </div>
+    <div class="panel">
+      <h3>Letzte Kaskadenentscheidung (White-Box-Trace)</h3>
+      <div id="last-decision" class="muted">Noch keine Entscheidung geloggt.</div>
+    </div>
+  </section>
+
+  <section id="tab-forecasts" class="tab">
+    <div class="panel">
+      <h3>Verbraucher-Auswahl (24 Stunden)</h3>
+      <div id="consumer-chips"></div>
+    </div>
+    <div class="panel">
+      <h3 id="chart-title">Gesamthaus-Lastprognose</h3>
+      <div id="chart" aria-label="24-Stunden-Leistungsprognose"></div>
+      <p class="muted" id="chart-meta">96 × 15-Minuten-Slots mit Hover-Tooltip.</p>
+    </div>
+  </section>
+
+  <section id="tab-patterns" class="tab">
+    <div class="panel">
+      <div class="row" style="justify-content:space-between">
+        <h3 style="margin:0">Erkannte Schaltmuster</h3>
+        <button type="button" class="primary" id="retrain-btn">Muster aus HA-Historie aktualisieren</button>
+      </div>
+      <p class="muted" id="retrain-status"></p>
+      <table>
+        <thead><tr><th>Name / Entity-ID</th><th>Tagtyp</th><th>Einschaltzeit</th><th>Dauer</th><th>Konfidenz</th><th>Leistung</th></tr></thead>
+        <tbody id="pattern-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="tab-devices" class="tab">
+    <div class="panel">
+      <h3>WashData-Erkennung</h3>
+      <div id="washdata-banner" class="muted">Keine Geräte erkannt.</div>
+      <div class="row"><button type="button" id="sync-washdata">WashData-Geräte synchronisieren</button></div>
+    </div>
+    <div class="panel">
+      <h3>Konfigurierte Verbraucher &amp; Geräte</h3>
+      <div id="device-list"></div>
+    </div>
+    <div class="panel">
+      <h3>Neuen Verbraucher / Neues Gerät hinzufügen</h3>
+      <div class="row">
+        <label for="form-controllable"><input id="form-controllable" type="checkbox" checked> Regel-/Steuerbares Gerät</label>
+      </div>
+      <div class="grid-form">
+        <div><label for="f-name">Name</label><input id="f-name" type="text"></div>
+        <div><label for="f-id">Geräte-ID</label><input id="f-id" type="text"></div>
+        <div><label for="f-category">Kategorie</label><select id="f-category">
+          <option value="wallbox">wallbox</option><option value="battery">battery</option>
+          <option value="heatpump">heatpump</option><option value="deferrable_load">deferrable_load</option>
+          <option value="appliance_cycle">appliance_cycle</option><option value="monitored_load">monitored_load</option>
+        </select></div>
+        <div><label for="f-mode">Regelungsart</label><select id="f-mode">
+          <option value="continuous_watt">continuous_watt</option><option value="binary_switch">binary_switch</option>
+          <option value="sg_ready">sg_ready</option><option value="none">none</option>
+        </select></div>
+        <div><label for="f-min">Mindestleistung (W)</label><input id="f-min" type="number" value="0"></div>
+        <div><label for="f-max">Maximalleistung (W)</label><input id="f-max" type="number" value="2000"></div>
+        <div><label for="f-nominal">Nennleistung (W)</label><input id="f-nominal" type="number" value="1000"></div>
+        <div><label for="f-priority">Prioritätsrang</label><input id="f-priority" type="number" value="50"></div>
+        <div><label for="f-power-sensor">Leistungssensor</label><input id="f-power-sensor" type="text" list="ha-entities"></div>
+        <div><label for="f-state-sensor">Zustandssensor</label><input id="f-state-sensor" type="text" list="ha-entities"></div>
+        <div><label for="f-washdata">WashData-Präfix</label><input id="f-washdata" type="text"></div>
+        <div id="actor-fields">
+          <label for="f-transport">Transport</label><select id="f-transport">
+            <option value="mqtt">mqtt</option><option value="ha_service">ha_service</option>
+          </select>
+          <label for="f-topic">MQTT-Topic / HA-Entität</label><input id="f-topic" type="text" list="ha-entities">
+        </div>
+        <div><label for="f-14a"><input id="f-14a" type="checkbox" checked> § 14a steuVE</label></div>
+      </div>
+      <datalist id="ha-entities"></datalist>
+      <div class="row"><button type="button" class="primary" id="add-device">Gerät hinzufügen</button>
+        <span class="muted" id="device-status"></span></div>
+    </div>
+  </section>
+</main>
+
+<script>
+  let selectedSeries = null;
+  let currentReport = null;
+
+  document.querySelectorAll(".tabs button").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll(".tabs button").forEach(function (b) { b.classList.remove("active"); });
+      document.querySelectorAll(".tab").forEach(function (t) { t.classList.remove("active"); });
+      btn.classList.add("active");
+      document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
+      loadAll();
+    });
+  });
+
+  document.getElementById("theme-toggle").addEventListener("click", function () {
+    document.body.classList.toggle("light");
+  });
+
+  document.getElementById("mode-select").addEventListener("change", async function (event) {
+    await fetch("api/control/mode", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: event.target.value })
+    });
+    loadDashboard();
+  });
+
+  document.getElementById("dry-toggle").addEventListener("change", async function (event) {
+    await fetch("api/control/dry_run", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dry_run: event.target.checked })
+    });
+    loadDashboard();
+  });
+
+  document.getElementById("retrain-btn").addEventListener("click", async function () {
+    const status = document.getElementById("retrain-status");
+    status.textContent = "Analysiere HA-Historie…";
+    const response = await fetch("api/patterns/retrain", { method: "POST" });
+    const result = await response.json();
+    status.textContent = result.patterns_found + " Muster erkannt.";
+    loadPatterns();
+    currentReport = null;
+    loadForecasts();
+  });
+
+  document.getElementById("sync-washdata").addEventListener("click", async function () {
+    const response = await fetch("api/integrations/washdata/sync", { method: "POST" });
+    const result = await response.json();
+    document.getElementById("device-status").textContent = result.imported_count + " Geräte importiert.";
+    loadDevices();
+  });
+
+  document.getElementById("form-controllable").addEventListener("change", function (event) {
+    document.getElementById("actor-fields").style.display = event.target.checked ? "block" : "none";
+  });
+
+  document.getElementById("add-device").addEventListener("click", async function () {
+    const controllable = document.getElementById("form-controllable").checked;
+    const transport = controllable ? document.getElementById("f-transport").value : "none";
+    const topic = document.getElementById("f-topic").value.trim();
+    const payload = {
+      device_id: document.getElementById("f-id").value.trim(),
+      name: document.getElementById("f-name").value.trim(),
+      category: document.getElementById("f-category").value,
+      is_controllable: controllable,
+      control_mode: document.getElementById("f-mode").value,
+      enabled: true,
+      is_steuve_14a: document.getElementById("f-14a").checked,
+      priority_rank: Number(document.getElementById("f-priority").value),
+      min_power_w: Number(document.getElementById("f-min").value),
+      max_power_w: Number(document.getElementById("f-max").value),
+      nominal_power_w: Number(document.getElementById("f-nominal").value),
+      power_sensor_entity_id: document.getElementById("f-power-sensor").value.trim() || null,
+      state_entity_id: document.getElementById("f-state-sensor").value.trim() || null,
+      washdata_prefix: document.getElementById("f-washdata").value.trim() || null,
+      transport: transport
+    };
+    if (controllable && transport === "mqtt") payload.mqtt_command_topic = topic || null;
+    if (controllable && transport === "ha_service") {
+      payload.ha_binding = { domain: "switch", entity_id: topic || "switch.unbekannt",
+        service_on_or_set: "turn_on", service_off: "turn_off", value_field: "value" };
+    }
+    const response = await fetch("api/devices", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    document.getElementById("device-status").textContent = response.ok
+      ? "Gerät gespeichert." : "Fehler: " + (await response.text());
+    loadDevices();
+  });
+
+  async function loadDashboard() {
+    const data = await (await fetch("api/dashboard")).json();
+    document.getElementById("header-status").textContent =
+      data.operating_mode + " · " + (data.dry_run ? "Shadow-Mode" : "LIVE");
+    const inputs = data.live_state || {};
+    document.getElementById("card-grid").textContent = (inputs.p_grid_before_w || 0).toFixed(0) + " W";
+    document.getElementById("card-pv").textContent = (inputs.p_pv_w || 0).toFixed(0) + " W";
+    document.getElementById("card-soc").textContent = (inputs.soc_battery_pct || 0).toFixed(1) + " %";
+    const active = !!(inputs.dso_14a_active);
+    document.getElementById("card-14a").innerHTML = active
+      ? '<span class="badge warn">Aktiv · ' + (inputs.dso_14a_limit_w || 0).toFixed(0) + ' W</span>'
+      : '<span class="badge ok">Normal</span>';
+    document.getElementById("mode-select").value = data.operating_mode;
+    document.getElementById("dry-toggle").checked = data.dry_run;
+    document.getElementById("shadow-banner").classList.toggle("show", !data.dry_run);
+
+    const wash = document.getElementById("washdata-live");
+    wash.textContent = data.washdata_devices.length
+      ? data.washdata_devices.map(function (w) {
+          return w.friendly_name + ": " + w.state + (w.program ? " (" + w.program + ")" : "") +
+            (w.is_running ? " – noch " + Math.round(w.time_remaining_min) + " min" : "");
+        }).join(" · ")
+      : "Keine WashData-Geräte erkannt.";
+
+    const decision = data.last_decision;
+    document.getElementById("last-decision").textContent = decision
+      ? "Prio " + decision.derivation.winning_priority + " · " + decision.trigger +
+        " · Wallbox " + decision.outputs.cmd_wallbox_w.toFixed(0) + " W · Batterie " +
+        decision.outputs.cmd_battery_w.toFixed(0) + " W"
+      : "Noch keine Entscheidung geloggt.";
+  }
+
+  function renderChart(values, meta, title) {
+    document.getElementById("chart-title").textContent = title;
+    const width = 1000, height = 280, bottom = 32;
+    const max = Math.max(1, values.reduce(function (a, b) { return Math.max(a, b); }, 0));
+    const barWidth = width / values.length;
+    let bars = "";
+    values.forEach(function (value, index) {
+      const barHeight = (value / max) * (height - bottom - 10);
+      const x = (index * barWidth).toFixed(2);
+      const y = (height - bottom - barHeight).toFixed(2);
+      const info = meta[index] || {};
+      bars += '<rect x="' + x + '" y="' + y + '" width="' + (barWidth - 1).toFixed(2) +
+        '" height="' + barHeight.toFixed(2) + '" fill="var(--accent)" opacity="0.85">' +
+        '<title>' + (info.label || index) + ' · ' + value.toFixed(0) + ' W · ' +
+        Math.round((info.confidence || 0) * 100) + ' % · ' + (info.source || "-") +
+        '</title></rect>';
+    });
+    document.getElementById("chart").innerHTML =
+      '<svg viewBox="0 0 ' + width + ' ' + height + '" preserveAspectRatio="none" role="img">' +
+      '<line x1="0" y1="' + (height - bottom) + '" x2="' + width + '" y2="' + (height - bottom) +
+      '" stroke="var(--border)"/>' + bars + '</svg>';
+    document.getElementById("chart-meta").textContent =
+      values.length + " Slots · Spitze " + max.toFixed(0) + " W · Hover zeigt Uhrzeit, Leistung, Konfidenz und Quelle.";
+  }
+
+  async function loadForecasts() {
+    const report = currentReport || await (await fetch("api/forecasts")).json();
+    currentReport = report;
+    const chips = document.getElementById("consumer-chips");
+    chips.innerHTML = "";
+    const options = [
+      { id: "__total", name: "Gesamthaus-Lastprognose", badge: "Aggregat" },
+      { id: "__uncontrollable", name: "Nicht-steuerbare Grundlast", badge: "Aggregat" }
+    ].concat(report.consumers.map(function (c) {
+      return { id: c.consumer_id, name: c.name, badge: c.active_status_label ||
+        (c.is_controllable ? "Steuerbar" : "Überwacht") };
+    }));
+    options.forEach(function (option) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "chip" + ((selectedSeries || "__total") === option.id ? " selected" : "");
+      button.textContent = option.name + " · " + option.badge;
+      button.addEventListener("click", function () { selectedSeries = option.id; loadForecasts(); });
+      chips.appendChild(button);
+    });
+    const choice = selectedSeries || "__total";
+    if (choice === "__total" || choice === "__uncontrollable") {
+      const values = choice === "__total" ? report.total_house_predicted_w : report.aggregated_uncontrollable_w;
+      const meta = values.map(function (value, index) {
+        const slot = report.consumers[0] && report.consumers[0].slots[index];
+        return { label: (index / 4).toFixed(2) + " h", confidence: slot ? slot.confidence : 0,
+          source: choice === "__total" ? "Gesamthaus" : "Grundlast" };
+      });
+      renderChart(values, meta, choice === "__total" ? "Gesamthaus-Lastprognose" : "Nicht-steuerbare Grundlast");
+      return;
+    }
+    const consumer = report.consumers.find(function (c) { return c.consumer_id === choice; });
+    if (!consumer) { selectedSeries = "__total"; return loadForecasts(); }
+    renderChart(consumer.slots.map(function (s) { return s.expected_power_w; }),
+      consumer.slots.map(function (s, index) {
+        return { label: (index / 4).toFixed(2) + " h", confidence: s.confidence, source: s.source };
+      }),
+      consumer.name + " · " + consumer.total_predicted_kwh_24h.toFixed(2) + " kWh / 24 h");
+  }
+
+  async function loadPatterns() {
+    const patterns = await (await fetch("api/patterns")).json();
+    const rows = document.getElementById("pattern-rows");
+    rows.innerHTML = "";
+    patterns.forEach(function (pattern) {
+      const tr = document.createElement("tr");
+      const minutes = String(pattern.typical_on_minute % 60).padStart(2, "0");
+      const hours = String(Math.floor(pattern.typical_on_minute / 60)).padStart(2, "0");
+      tr.innerHTML = "<td>" + pattern.friendly_name + "<br><span class='muted'>" +
+        pattern.entity_id + "</span></td><td><span class='badge'>" + pattern.day_type +
+        "</span></td><td>" + hours + ":" + minutes + " ± " + pattern.std_dev_min.toFixed(0) +
+        " min</td><td>" + pattern.avg_duration_min.toFixed(0) + " min</td><td><div class='bar'><div style='width:" +
+        Math.round(pattern.confidence * 100) + "%'></div></div>" + Math.round(pattern.confidence * 100) +
+        " % (" + pattern.sample_count + " Tage)</td><td>" + pattern.estimated_power_w.toFixed(0) + " W</td>";
+      rows.appendChild(tr);
+    });
+    if (!patterns.length) rows.innerHTML = "<tr><td colspan='6' class='muted'>Keine Muster gelernt.</td></tr>";
+  }
+
+  async function loadDevices() {
+    const devices = await (await fetch("api/devices")).json();
+    const list = document.getElementById("device-list");
+    list.innerHTML = "";
+    devices.forEach(function (device) {
+      const row = document.createElement("div");
+      row.className = "list-item";
+      row.innerHTML = "<div><strong>" + device.name + "</strong> <span class='muted'>" +
+        device.device_id + "</span><br><span class='badge " + (device.is_controllable ? "ok" : "warn") +
+        "'>" + (device.is_controllable ? "Steuerbar" : "Überwacht / Prognose") + "</span> " +
+        "<span class='badge'>" + device.category + "</span> " +
+        (device.is_steuve_14a ? "<span class='badge warn'>§ 14a</span>" : "") + "</div>" +
+        "<div>" + device.min_power_w + "–" + device.max_power_w + " W</div>";
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.textContent = device.enabled ? "Deaktivieren" : "Aktivieren";
+      toggle.addEventListener("click", async function () {
+        await fetch("api/devices/" + encodeURIComponent(device.device_id) + "/enabled", {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled: !device.enabled })
+        });
+        loadDevices();
+      });
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "danger";
+      del.textContent = "Löschen";
+      del.addEventListener("click", async function () {
+        await fetch("api/devices/" + encodeURIComponent(device.device_id), { method: "DELETE" });
+        loadDevices();
+      });
+      row.appendChild(toggle);
+      row.appendChild(del);
+      list.appendChild(row);
+    });
+
+    const wash = await (await fetch("api/integrations/washdata")).json();
+    document.getElementById("washdata-banner").textContent = wash.length
+      ? "Erkannt: " + wash.map(function (w) { return w.friendly_name; }).join(", ")
+      : "Keine WashData-Geräte erkannt.";
+
+    const entities = await (await fetch("api/ha/entities")).json();
+    const datalist = document.getElementById("ha-entities");
+    datalist.innerHTML = "";
+    entities.forEach(function (entity) {
+      const option = document.createElement("option");
+      option.value = entity.entity_id;
+      datalist.appendChild(option);
+    });
+  }
+
+  async function loadAll() {
+    try {
+      await loadDashboard();
+      await loadForecasts();
+      await loadPatterns();
+      await loadDevices();
+    } catch (error) {
+      document.getElementById("header-status").textContent = "API nicht erreichbar";
+      console.error(error);
+    }
+  }
+
+  loadAll();
+</script>
+</body>
+</html>

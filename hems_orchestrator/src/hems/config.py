@@ -11,6 +11,7 @@ import os
 from enum import Enum
 from pathlib import Path
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -68,6 +69,15 @@ class AppConfig(BaseModel):
     jsonl_backup_count: int = Field(default=10, ge=1, le=50)
     audit_heartbeat_s: int = Field(default=60, ge=5, le=3600)
 
+    ha_api_url: str = Field(default="http://supervisor/core/api")
+    ha_token: str = Field(default="")
+    ingress_port: int = Field(default=8099, ge=1024, le=65535)
+    pattern_lookback_days: int = Field(default=14, ge=3, le=60)
+    pattern_retrain_interval_s: float = Field(default=21600.0, ge=300.0, le=86400.0)
+    auto_discover_washdata: bool = Field(default=True)
+    timezone: str = Field(default="Europe/Berlin", min_length=1)
+    ingress_only: bool = Field(default=True)
+
     data_dir: Path = Path("/data")
     tmp_dir: Path = Path("/tmp/hems_cache")
 
@@ -88,6 +98,10 @@ class AppConfig(BaseModel):
                 "dso_14a_min_power_w must be >= 4200.0 W "
                 "(regulatorische Untergrenze nach § 14a EnWG / BNetzA BK6-22-300)"
             )
+        try:
+            ZoneInfo(self.timezone)
+        except (KeyError, ValueError, TypeError) as exc:
+            raise ValueError(f"invalid timezone: {self.timezone!r}") from exc
         return self
 
 

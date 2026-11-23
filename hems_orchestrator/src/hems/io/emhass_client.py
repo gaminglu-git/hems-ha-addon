@@ -38,9 +38,16 @@ class EmhassResult(BaseModel):
     solve_ms: int | None
     setpoints: ProposedSetpoints | None
     runtimeparams_hash: str | None
+    wallbox_schedule_w: list[float] | None = None
+    heatpump_schedule_w: list[float] | None = None
+    battery_schedule_w: list[float] | None = None
 
 
-def build_runtimeparams(inputs: SystemInputs, config: AppConfig) -> dict[str, Any]:
+def build_runtimeparams(
+    inputs: SystemInputs,
+    config: AppConfig,
+    aggregated_load_w: list[float] | None = None,
+) -> dict[str, Any]:
     """Erzeugt das vollständige runtimeparams-Dict (kein Konfigurations-Drift)."""
     tariff_eur_kwh = inputs.tariff_ct_kwh / 100.0
     prod_price = 0.0 if inputs.tariff_ct_kwh < 0.0 else _FEEDIN_TARIFF_EUR_KWH
@@ -65,14 +72,21 @@ def build_runtimeparams(inputs: SystemInputs, config: AppConfig) -> dict[str, An
         e_thermal_wh = (config.heatpump_temp_min_c - inputs.t_buffer_c) * _BUFFER_CAPACITY_WH_PER_K
         heatpump_hours = (e_thermal_wh / _HEATPUMP_COP) / config.heatpump_nominal_power_w
 
+    if aggregated_load_w and any(value > 0.0 for value in aggregated_load_w):
+        load_forecast = [float(value) for value in aggregated_load_w[:_PREDICTION_HORIZON]]
+        load_forecast.extend([load_forecast[-1]] * (_PREDICTION_HORIZON - len(load_forecast)))
+    else:
+        load_forecast = [inputs.p_house_base_w] * _PREDICTION_HORIZON
+
     params: dict[str, Any] = {
         "prediction_horizon": _PREDICTION_HORIZON,
+        "time_step": 15,
         "soc_init": inputs.soc_battery_pct / 100.0,
         "soc_final": 0.20,
         "load_cost_forecast": [effective_cost] * _PREDICTION_HORIZON,
         "prod_price_forecast": [prod_price] * _PREDICTION_HORIZON,
         "pv_power_forecast": [inputs.p_pv_w] * _PREDICTION_HORIZON,
-        "load_power_forecast": [inputs.p_house_base_w] * _PREDICTION_HORIZON,
+        "load_power_forecast": load_forecast,
         "def_total_hours": [wallbox_hours, heatpump_hours],
         "number_of_deferrable_loads": 2,
         "nominal_power_of_deferrable_loads": [
@@ -124,14 +138,45 @@ def _parse_setpoints(response_json: Any) -> ProposedSetpoints | None:
     )
 
 
+def _parse_schedule(
+    response_json: Any, key: str, *, clamp_positive: bool, invert: bool = False
+) -> list[float] | None:
+    """Extrahiert einen 24-Slot-Fahrplan aus einer EMHASS-Spalte."""
+    if not isinstance(response_json, dict):
+        return None
+    raw = response_json.get(key)
+    if not isinstance(raw, list) or not raw:
+        return None
+    try:
+        values = [float(value) for value in raw[:_PREDICTION_HORIZON]]
+    except (TypeError, ValueError):
+        return None
+    if invert:
+        values = [-value for value in values]
+    elif clamp_positive:
+        values = [max(0.0, value) for value in values]
+    values.extend([values[-1]] * (_PREDICTION_HORIZON - len(values)))
+    return values
+
+
 class EmhassClient:
     """Async-HTTP-Client für POST /action/naive-mpc-optim mit Timeout-Handling."""
 
     def __init__(self, config: AppConfig) -> None:
         self._config = config
 
-    async def optimize(self, inputs: SystemInputs) -> EmhassResult:
-        runtimeparams = build_runtimeparams(inputs, self._config)
+    def set_operating_mode(self, mode: OperatingMode) -> None:
+        """Hält die aktive Config-Referenz synchron zur Laufzeitumschaltung."""
+        self._config.operating_mode = mode
+
+    def set_dry_run(self, dry_run: bool) -> None:
+        """Hält die aktive Config-Referenz synchron zur Laufzeitumschaltung."""
+        self._config.dry_run = dry_run
+
+    async def optimize(
+        self, inputs: SystemInputs, aggregated_load_w: list[float] | None = None
+    ) -> EmhassResult:
+        runtimeparams = build_runtimeparams(inputs, self._config, aggregated_load_w)
         params_hash = canonical_runtimeparams_hash(runtimeparams)
         url = f"{self._config.emhass_url}/action/naive-mpc-optim"
         start_ns = time.perf_counter_ns()
@@ -172,5 +217,15 @@ class EmhassClient:
                 status="error", solve_ms=solve_ms, setpoints=None, runtimeparams_hash=params_hash
             )
         return EmhassResult(
-            status="ok", solve_ms=solve_ms, setpoints=setpoints, runtimeparams_hash=params_hash
+            status="ok",
+            solve_ms=solve_ms,
+            setpoints=setpoints,
+            runtimeparams_hash=params_hash,
+            wallbox_schedule_w=_parse_schedule(response_json, "P_deferrable0", clamp_positive=True),
+            heatpump_schedule_w=_parse_schedule(
+                response_json, "P_deferrable1", clamp_positive=True
+            ),
+            battery_schedule_w=_parse_schedule(
+                response_json, "P_batt", clamp_positive=False, invert=True
+            ),
         )

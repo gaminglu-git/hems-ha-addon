@@ -105,6 +105,9 @@ Der Agent arbeitet die Pläne strikt sequenziell ab. Eine Phase gilt erst als ab
 | Phase 2 | `docs/02_DATA_MODELS_AND_AUDIT_LOGGING.md` | Pydantic Models, JSONL-Logger, SQLite Audit-DB, Verification-Tracker | `pytest tests/test_audit_logging.py` grün |
 | Phase 3 | `docs/03_CONTROL_CORE_AND_EMHASS.md` | MQTT I/O, Stateless EMHASS Client, Modi A/B/C, 4-Stufen-Kaskade | `pytest tests/test_emhass_client.py tests/test_priority_cascade.py` grün |
 | Phase 4 | `docs/04_QUASI_HIL_AND_VERIFICATION.md` | Quasi-HIL Replay, Fault Injection, KPI-Rechner, E2E-Tests | Komplette Testsuite `pytest -v` 100 % grün |
+| Phase 5 | `docs/06_HOME_ASSISTANT_API_AND_DEVICE_REGISTRY.md` | HA Core API (Supervisor Proxy), Universal Consumer & Device Registry, WashData Auto-Discovery, Ingress-UI | `ruff check src tests` clean + `pytest -v` grün (87 Bestandstests + neue Registry-/Client-Tests) |
+| Phase 6 | `docs/07_UNIVERSAL_CONSUMER_FORECAST.md` | WashData-Auswertung, zirkuläre Mustererkennung, historische Lastprofile, 96-Slot-Einzelverbraucher-Prognose, EMHASS-Rückkopplung | `ruff check src tests` clean + `pytest -v` grün (87 + Phase-5 + neue Prognose-Tests) |
+| Phase 7 | `docs/08_INGRESS_WEB_UI_AND_REST_API.md` | HA-Ingress-Web-UI (4 Tabs), FastAPI-REST-API, Live-Regelung, Muster-/Prognoseanzeige, Geräteverwaltung | `ruff check src tests` clean + `pytest -v` grün (87 + Phase-5/-6 + neue Web-Tests), 0 Warnings |
 
 ## 5. Abhängigkeiten (pyproject.toml)
 
@@ -115,6 +118,7 @@ Verbindliche Core-Pakete (keine schweren Frameworks wie Django, Celery oder Pand
 - `httpx>=0.27,<1.0` (Async HTTP für EMHASS & Supervisor API)
 - `aiomqtt>=2.3,<3.0` (Async MQTT Client)
 - `aiosqlite>=0.20,<1.0` (Async SQLite für Audit-DB)
+- `fastapi>=0.115,<1.0`, `uvicorn[standard]>=0.32,<1.0` (Phase 5: lokaler Ingress-UI-Server auf Port 8099; kein Ersatz für den asyncio-Regelkern)
 
 Dev/Test:
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiomqtt
 import httpx
@@ -21,6 +21,9 @@ from hems.config import AppConfig, OperatingMode
 from hems.models import ControlOutputs, DecisionTraceRecord, SystemInputs
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from hems.control.scheduler import ControlScheduler
 
 
 class MqttCredentials(BaseModel):
@@ -105,19 +108,32 @@ class LiveState:
         self.inputs = inputs
 
 
-def handle_message(topic: str, payload: bytes, state: LiveState, config: AppConfig) -> None:
+def handle_message(
+    topic: str,
+    payload: bytes,
+    state: LiveState,
+    config: AppConfig,
+    scheduler: ControlScheduler | None = None,
+) -> None:
     """Verarbeitet eine MQTT-Nachricht; Fehler werden strukturiert geloggt."""
     prefix = config.mqtt_topic_prefix
     try:
         if topic == f"{prefix}/sensors/state":
             state.set_inputs(SystemInputs.model_validate_json(payload))
         elif topic == f"{prefix}/control/mode":
-            state.operating_mode = OperatingMode(payload.decode("utf-8").strip())
+            mode = OperatingMode(payload.decode("utf-8").strip())
+            if scheduler is not None:
+                scheduler.set_operating_mode(mode)
+            else:
+                state.operating_mode = mode
         elif topic == f"{prefix}/control/dry_run":
             value = payload.decode("utf-8").strip().lower()
             if value not in ("true", "false"):
                 raise ValueError(f"invalid dry_run payload: {value!r}")
-            state.dry_run = value == "true"
+            if scheduler is not None:
+                scheduler.set_dry_run(value == "true")
+            else:
+                state.dry_run = value == "true"
         elif topic == f"{prefix}/dso/14a_signal":
             signal = json.loads(payload)
             state.apply_dso_signal(active=bool(signal["active"]), limit_w=float(signal["limit_w"]))
@@ -145,10 +161,15 @@ class ActuatorPublisher:
         await client.publish(f"{self._prefix}/status/last_decision", record.model_dump_json())
 
 
-async def run_ingestion(client: aiomqtt.Client, state: LiveState, config: AppConfig) -> None:
+async def run_ingestion(
+    client: aiomqtt.Client,
+    state: LiveState,
+    config: AppConfig,
+    scheduler: ControlScheduler | None = None,
+) -> None:
     """Subscribed alle Eingangs-Topics und verarbeitet Nachrichten endlos."""
     for topic in subscribed_topics(config.mqtt_topic_prefix):
         await client.subscribe(topic)
     async for message in client.messages:
         payload = message.payload if isinstance(message.payload, bytes) else b""
-        handle_message(str(message.topic), payload, state, config)
+        handle_message(str(message.topic), payload, state, config, scheduler)

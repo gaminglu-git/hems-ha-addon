@@ -7,13 +7,19 @@ werden nachträglich per UPDATE gesetzt (JSONL bleibt append-only).
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
 from hems.config import AppConfig
 from hems.models import DecisionTraceRecord, VerificationResult
+
+logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from hems.forecast.pattern_learner import LearnedPattern
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS decisions (
@@ -56,6 +62,24 @@ CREATE TABLE IF NOT EXISTS decisions (
 CREATE INDEX IF NOT EXISTS idx_decisions_timestamp ON decisions(timestamp_utc);
 CREATE INDEX IF NOT EXISTS idx_decisions_14a ON decisions(dso_14a_active, timestamp_utc);
 CREATE INDEX IF NOT EXISTS idx_decisions_mode ON decisions(mode, timestamp_utc);
+
+CREATE TABLE IF NOT EXISTS learned_patterns (
+    pattern_id TEXT PRIMARY KEY,
+    entity_id TEXT NOT NULL,
+    friendly_name TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    day_type TEXT NOT NULL,
+    typical_on_minute INTEGER NOT NULL,
+    typical_off_minute INTEGER,
+    avg_duration_min REAL NOT NULL,
+    std_dev_min REAL NOT NULL,
+    confidence REAL NOT NULL,
+    sample_count INTEGER NOT NULL,
+    estimated_power_w REAL NOT NULL,
+    updated_at_utc TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_patterns_entity ON learned_patterns(entity_id, day_type);
 """
 
 _INSERT_SQL = """
@@ -68,6 +92,15 @@ INSERT INTO decisions (
     cmd_heatpump_w_est, raw_json
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
+
+_INSERT_PATTERN_SQL = """
+INSERT INTO learned_patterns (
+    pattern_id, entity_id, friendly_name, domain, day_type, typical_on_minute,
+    typical_off_minute, avg_duration_min, std_dev_min, confidence, sample_count,
+    estimated_power_w, updated_at_utc
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"""
+
 
 _UPDATE_VERIFICATION_SQL = """
 UPDATE decisions
@@ -175,6 +208,65 @@ class SqliteAuditStore:
         )
         rows = await cursor.fetchall()
         return [dict(row) for row in rows]
+
+    async def replace_patterns(self, patterns: list[LearnedPattern]) -> None:
+        """Atomarer Austausch aller gelernten Muster in einer Transaktion."""
+        conn = self._require_conn()
+        rows = [
+            (
+                pattern.pattern_id,
+                pattern.entity_id,
+                pattern.friendly_name,
+                pattern.domain,
+                pattern.day_type.value,
+                pattern.typical_on_minute,
+                pattern.typical_off_minute,
+                pattern.avg_duration_min,
+                pattern.std_dev_min,
+                pattern.confidence,
+                pattern.sample_count,
+                pattern.estimated_power_w,
+                pattern.updated_at_utc,
+            )
+            for pattern in patterns
+        ]
+        try:
+            await conn.execute("BEGIN IMMEDIATE;")
+            await conn.execute("DELETE FROM learned_patterns;")
+            await conn.executemany(_INSERT_PATTERN_SQL, rows)
+            await conn.commit()
+        except Exception as exc:  # noqa: BLE001 - Fehler loggen und weiterwerfen
+            await conn.rollback()
+            logger.error("Replacing learned patterns failed: %s", exc)
+            raise
+
+    async def list_patterns(self) -> list[LearnedPattern]:
+        from hems.forecast.pattern_learner import DayType, LearnedPattern  # lazy
+
+        conn = self._require_conn()
+        cursor = await conn.execute(
+            "SELECT * FROM learned_patterns "
+            "ORDER BY entity_id, day_type, typical_on_minute"
+        )
+        rows = await cursor.fetchall()
+        return [
+            LearnedPattern(
+                pattern_id=row["pattern_id"],
+                entity_id=row["entity_id"],
+                friendly_name=row["friendly_name"],
+                domain=row["domain"],
+                day_type=DayType(row["day_type"]),
+                typical_on_minute=row["typical_on_minute"],
+                typical_off_minute=row["typical_off_minute"],
+                avg_duration_min=row["avg_duration_min"],
+                std_dev_min=row["std_dev_min"],
+                confidence=row["confidence"],
+                sample_count=row["sample_count"],
+                estimated_power_w=row["estimated_power_w"],
+                updated_at_utc=row["updated_at_utc"],
+            )
+            for row in rows
+        ]
 
     async def close(self) -> None:
         if self._conn is not None:
