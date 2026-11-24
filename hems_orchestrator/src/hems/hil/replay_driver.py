@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from hems.config import AppConfig
 from hems.control.scheduler import ControlScheduler
 from hems.io.emhass_client import EmhassClient, EmhassResult
+from hems.io.market_client import MarketForecast
 from hems.io.mqtt_client import LiveState
 from hems.logging.jsonl_logger import JsonlLogger
 from hems.logging.sqlite_store import SqliteAuditStore
@@ -258,7 +259,12 @@ class FaultInjectingEmhassClient(EmhassClient):
             for fault in self._faults
         )
 
-    async def optimize(self, inputs: SystemInputs) -> EmhassResult:
+    async def optimize(
+        self,
+        inputs: SystemInputs,
+        aggregated_load_w: list[float] | None = None,
+        market_forecast: MarketForecast | None = None,
+    ) -> EmhassResult:
         if self.timeout_fault_active():
             return EmhassResult(
                 status="timeout",
@@ -266,7 +272,7 @@ class FaultInjectingEmhassClient(EmhassClient):
                 setpoints=None,
                 runtimeparams_hash=None,
             )
-        return await super().optimize(inputs)
+        return await super().optimize(inputs, aggregated_load_w, market_forecast)
 
 
 class ReplayDriver:

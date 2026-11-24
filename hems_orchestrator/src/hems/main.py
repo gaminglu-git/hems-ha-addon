@@ -18,6 +18,7 @@ from hems.control.scheduler import ControlScheduler
 from hems.forecast.appliance_forecaster import ForecastManager
 from hems.io.emhass_client import EmhassClient
 from hems.io.ha_core_client import HaCoreClient
+from hems.io.market_client import MarketDataClient
 from hems.io.mqtt_client import LiveState, resolve_mqtt_credentials, run_ingestion
 from hems.logging.jsonl_logger import JsonlLogger
 from hems.logging.sqlite_store import SqliteAuditStore
@@ -51,6 +52,7 @@ async def async_main() -> None:
     forecast_manager = ForecastManager(config, registry, ha_client, sqlite_store)
     registry.set_change_callback(forecast_manager.refresh)
     await forecast_manager.refresh()
+    market_client = MarketDataClient(config, ha_client=ha_client)
     scheduler = ControlScheduler(
         config,
         state,
@@ -61,6 +63,7 @@ async def async_main() -> None:
         device_registry=registry,
         ha_client=ha_client,
         forecast_manager=forecast_manager,
+        market_client=market_client,
     )
     app = create_app(config, scheduler, registry, ha_client, sqlite_store, forecast_manager)
     web_server = uvicorn.Server(

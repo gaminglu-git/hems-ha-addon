@@ -108,6 +108,7 @@ Der Agent arbeitet die Pläne strikt sequenziell ab. Eine Phase gilt erst als ab
 | Phase 5 | `docs/06_HOME_ASSISTANT_API_AND_DEVICE_REGISTRY.md` | HA Core API (Supervisor Proxy), Universal Consumer & Device Registry, WashData Auto-Discovery, Ingress-UI | `ruff check src tests` clean + `pytest -v` grün (87 Bestandstests + neue Registry-/Client-Tests) |
 | Phase 6 | `docs/07_UNIVERSAL_CONSUMER_FORECAST.md` | WashData-Auswertung, zirkuläre Mustererkennung, historische Lastprofile, 96-Slot-Einzelverbraucher-Prognose, EMHASS-Rückkopplung | `ruff check src tests` clean + `pytest -v` grün (87 + Phase-5 + neue Prognose-Tests) |
 | Phase 7 | `docs/08_INGRESS_WEB_UI_AND_REST_API.md` | HA-Ingress-Web-UI (4 Tabs), FastAPI-REST-API, Live-Regelung, Muster-/Prognoseanzeige, Geräteverwaltung | `ruff check src tests` clean + `pytest -v` grün (87 + Phase-5/-6 + neue Web-Tests), 0 Warnings |
+| Phase 8 | `docs/09_EXTERNAL_MARKET_AND_GRID_APIS.md` | Externe Strompreis-/EE-Prognosen (Energy-Charts, aWATTar, HA-Sensor), Brutto-Preis-/CO₂-Vektoren, gecachter MarketDataClient, EMHASS-Kopplung | `ruff check src tests` clean + `pytest -v` grün (127 Bestandstests + neue Markt-Tests), 0 Warnings |
 
 ## 5. Abhängigkeiten (pyproject.toml)
 

@@ -1,6 +1,6 @@
 name: "HEMS Grid-Supportive Orchestrator"
 description: "Netzdienliches HEMS mit EMHASS-Kopplung, §14a EnWG Prioritätskaskade und revisionssicherem Decision-Trace-Logging"
-version: "0.1.1"
+version: "0.1.2"
 slug: "hems_orchestrator"
 init: false
 arch:
@@ -58,6 +58,11 @@ options:
   auto_discover_washdata: true
   timezone: "Europe/Berlin"
   ingress_only: true
+  tariff_source: "energy_charts"
+  tariff_grid_fees_ct_kwh: 18.0
+  tariff_vat_pct: 19.0
+  ha_tariff_entity_id: ""
+  market_refresh_interval_s: 1800.0
 schema:
   operating_mode: list(A_BASELINE|B_MARKET_ORIENTED|C_GRID_SUPPORTIVE)
   dry_run: bool
@@ -98,3 +103,8 @@ schema:
   auto_discover_washdata: bool
   timezone: str
   ingress_only: bool
+  tariff_source: list(mqtt_only|energy_charts|awattar|ha_sensor)
+  tariff_grid_fees_ct_kwh: float(0.0,60.0)
+  tariff_vat_pct: float(0.0,30.0)
+  ha_tariff_entity_id: str?
+  market_refresh_interval_s: float(300.0,86400.0)

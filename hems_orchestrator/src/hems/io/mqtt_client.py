@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from hems.control.scheduler import ControlScheduler
+    from hems.io.market_client import MarketForecast
 
 
 class MqttCredentials(BaseModel):
@@ -106,6 +107,30 @@ class LiveState:
         if self._pending_dso is not None:
             inputs = inputs.model_copy(update=self._pending_dso)
         self.inputs = inputs
+
+    def apply_market_forecast(self, forecast: MarketForecast) -> None:
+        """Überschreibt tariff_ct_kwh/co2_intensity_g_kwh mit dem ersten Slot.
+
+        Nur gesetzt, wenn ``inputs`` bereits vorhanden ist; ein leerer Vektor
+        (Offline-Fallback) lässt den MQTT-Wert unverändert (docs/09 §6.1).
+        """
+        if self.inputs is None or not forecast.slots:
+            return
+        first = forecast.slots[0]
+        update: dict[str, Any] = {"tariff_ct_kwh": first.gross_ct_kwh}
+        if first.co2_intensity_g_kwh is not None:
+            update["co2_intensity_g_kwh"] = first.co2_intensity_g_kwh
+        self.inputs = self.inputs.model_copy(update=update)
+
+    @property
+    def tariff_ct_kwh(self) -> float | None:
+        """Aktueller tariff_ct_kwh aus dem inputs-Snapshot (read-only)."""
+        return self.inputs.tariff_ct_kwh if self.inputs is not None else None
+
+    @property
+    def co2_intensity_g_kwh(self) -> float | None:
+        """Aktuelle co2_intensity_g_kwh aus dem inputs-Snapshot (read-only)."""
+        return self.inputs.co2_intensity_g_kwh if self.inputs is not None else None
 
 
 def handle_message(

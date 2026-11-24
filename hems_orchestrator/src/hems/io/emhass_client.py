@@ -16,6 +16,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict
 
 from hems.config import AppConfig, OperatingMode
+from hems.io.market_client import MarketForecast
 from hems.models import ProposedSetpoints, SystemInputs
 
 logger = logging.getLogger(__name__)
@@ -47,8 +48,14 @@ def build_runtimeparams(
     inputs: SystemInputs,
     config: AppConfig,
     aggregated_load_w: list[float] | None = None,
+    market_forecast: MarketForecast | None = None,
 ) -> dict[str, Any]:
-    """Erzeugt das vollständige runtimeparams-Dict (kein Konfigurations-Drift)."""
+    """Erzeugt das vollständige runtimeparams-Dict (kein Konfigurations-Drift).
+
+    Ist ``market_forecast`` gesetzt, wird ``load_cost_forecast`` aus dem
+    zeitabhängigen 24-Slot-Vektor (EUR/kWh) gebildet; im Modus C zuzüglich der
+    zeitabhängigen CO2-Gewichtung. Ohne Forecast bleibt das Dict bitgleich.
+    """
     tariff_eur_kwh = inputs.tariff_ct_kwh / 100.0
     prod_price = 0.0 if inputs.tariff_ct_kwh < 0.0 else _FEEDIN_TARIFF_EUR_KWH
 
@@ -78,12 +85,30 @@ def build_runtimeparams(
     else:
         load_forecast = [inputs.p_house_base_w] * _PREDICTION_HORIZON
 
+    # Ohne Forecast bitgleich: konstanter effektiver Kostenterm über alle Slots.
+    # Mit Forecast: zeitabhängiger 24-Slot-Vektor (EUR/kWh), Modus C + CO2-Gewichtung.
+    if market_forecast is not None and market_forecast.load_cost_forecast_eur_kwh:
+        load_cost_forecast = list(market_forecast.load_cost_forecast_eur_kwh[:_PREDICTION_HORIZON])
+        if config.operating_mode is OperatingMode.C_GRID_SUPPORTIVE:
+            co2_vector = market_forecast.co2_forecast_g_kwh
+            load_cost_forecast = [
+                cost + (co2_vector[index] / 1000.0) * _CO2_COST_EUR_PER_KG
+                if index < len(co2_vector)
+                else cost
+                for index, cost in enumerate(load_cost_forecast)
+            ]
+        load_cost_forecast.extend(
+            [load_cost_forecast[-1]] * (_PREDICTION_HORIZON - len(load_cost_forecast))
+        )
+    else:
+        load_cost_forecast = [effective_cost] * _PREDICTION_HORIZON
+
     params: dict[str, Any] = {
         "prediction_horizon": _PREDICTION_HORIZON,
         "time_step": 15,
         "soc_init": inputs.soc_battery_pct / 100.0,
         "soc_final": 0.20,
-        "load_cost_forecast": [effective_cost] * _PREDICTION_HORIZON,
+        "load_cost_forecast": load_cost_forecast,
         "prod_price_forecast": [prod_price] * _PREDICTION_HORIZON,
         "pv_power_forecast": [inputs.p_pv_w] * _PREDICTION_HORIZON,
         "load_power_forecast": load_forecast,
@@ -174,9 +199,14 @@ class EmhassClient:
         self._config.dry_run = dry_run
 
     async def optimize(
-        self, inputs: SystemInputs, aggregated_load_w: list[float] | None = None
+        self,
+        inputs: SystemInputs,
+        aggregated_load_w: list[float] | None = None,
+        market_forecast: MarketForecast | None = None,
     ) -> EmhassResult:
-        runtimeparams = build_runtimeparams(inputs, self._config, aggregated_load_w)
+        runtimeparams = build_runtimeparams(
+            inputs, self._config, aggregated_load_w, market_forecast
+        )
         params_hash = canonical_runtimeparams_hash(runtimeparams)
         url = f"{self._config.emhass_url}/action/naive-mpc-optim"
         start_ns = time.perf_counter_ns()

@@ -20,6 +20,7 @@ from hems.control.device_registry import DeviceCommandDispatcher, DeviceRegistry
 from hems.forecast.appliance_forecaster import ForecastManager
 from hems.io.emhass_client import EmhassClient, EmhassResult
 from hems.io.ha_core_client import HaCoreClient
+from hems.io.market_client import MarketDataClient
 from hems.io.mqtt_client import ActuatorPublisher, LiveState
 from hems.logging.jsonl_logger import JsonlLogger
 from hems.logging.sqlite_store import SqliteAuditStore
@@ -83,6 +84,7 @@ class ControlScheduler:
         device_registry: DeviceRegistry | None = None,
         ha_client: HaCoreClient | None = None,
         forecast_manager: ForecastManager | None = None,
+        market_client: MarketDataClient | None = None,
     ) -> None:
         self._config = config
         self._state = state
@@ -91,6 +93,7 @@ class ControlScheduler:
         self._tracker = verification_tracker
         self._emhass = emhass_client
         self._forecast_manager = forecast_manager
+        self._market_client = market_client
         self._clock: Clock = clock if clock is not None else RealClock()
         self._publisher = ActuatorPublisher(config.mqtt_topic_prefix)
         self._dispatcher: DeviceCommandDispatcher | None = (
@@ -149,11 +152,26 @@ class ControlScheduler:
                     aggregated_load_w = candidate
             except Exception as exc:  # noqa: BLE001 - Prognosefehler -> Fallback-Last
                 logger.error("Forecast refresh before MPC failed: %s", exc)
+        # Marktdaten (kein HTTP im MPC-Pfad) in LiveState und EMHASS-Vektor übernehmen.
+        market_forecast = None
+        if self._market_client is not None:
+            try:
+                market_forecast = self._market_client.get_forecast()
+                if market_forecast is not None:
+                    self._state.apply_market_forecast(market_forecast)
+                    inputs = self._state.inputs if self._state.inputs is not None else inputs
+            except Exception as exc:  # noqa: BLE001 - Marktdatenfehler -> MQTT-Wert
+                logger.error("Market forecast application failed: %s", exc)
+                market_forecast = None
         try:
             if aggregated_load_w is None:
-                self._emhass_result = await self._emhass.optimize(inputs)
+                self._emhass_result = await self._emhass.optimize(
+                    inputs, market_forecast=market_forecast
+                )
             else:
-                self._emhass_result = await self._emhass.optimize(inputs, aggregated_load_w)
+                self._emhass_result = await self._emhass.optimize(
+                    inputs, aggregated_load_w, market_forecast
+                )
         except Exception as exc:  # noqa: BLE001 - jede Exception -> Prio-4-Fallback
             logger.error("EMHASS MPC cycle failed, falling back to Prio 4: %s", exc)
             self._emhass_result = None
@@ -294,8 +312,25 @@ class ControlScheduler:
             await self._dispatcher.dispatch_cascade(outputs, inputs, config, dry_run=dry_run)
 
     async def run(self) -> None:
-        """Startet MPC-Loop (15 min) und Real-Time-Loop (1 Hz) als asyncio.Tasks."""
-        await asyncio.gather(self._run_mpc_loop(), self._run_control_loop())
+        """Startet MPC-Loop (15 min), Real-Time-Loop (1 Hz) und Markt-Loop."""
+        tasks = [self._run_mpc_loop(), self._run_control_loop()]
+        if self._market_client is not None and self._config.tariff_source != "mqtt_only":
+            tasks.append(self._run_market_loop())
+        await asyncio.gather(*tasks)
+
+    async def _run_market_loop(self) -> None:
+        """Aktualisiert den Marktprognose-Cache periodisch (docs/09 §6.3)."""
+        assert self._market_client is not None
+        try:
+            await self._market_client.refresh(force=True)
+        except Exception as exc:  # noqa: BLE001 - Startfehler loggen, Loop bleibt aktiv
+            logger.error("Initial market refresh failed: %s", exc)
+        while True:
+            await self._clock.sleep(self._config.market_refresh_interval_s)
+            try:
+                await self._market_client.refresh(force=False)
+            except Exception as exc:  # noqa: BLE001 - Refreshfehler loggen, Loop bleibt aktiv
+                logger.error("Market refresh failed: %s", exc)
 
     async def _run_mpc_loop(self) -> None:
         while True:

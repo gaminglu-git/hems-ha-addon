@@ -78,6 +78,14 @@ class AppConfig(BaseModel):
     timezone: str = Field(default="Europe/Berlin", min_length=1)
     ingress_only: bool = Field(default=True)
 
+    # Externe Markt-/Netz-APIs (docs/09, Phase 8). Default "energy_charts" ist
+    # rückwärtskompatibel: ohne Netz greift der MQTT-Fallback (tariff_ct_kwh).
+    tariff_source: Literal["mqtt_only", "energy_charts", "awattar", "ha_sensor"] = "energy_charts"
+    tariff_grid_fees_ct_kwh: float = Field(default=18.0, ge=0.0, le=60.0)
+    tariff_vat_pct: float = Field(default=19.0, ge=0.0, le=30.0)
+    ha_tariff_entity_id: str | None = None
+    market_refresh_interval_s: float = Field(default=1800.0, ge=300.0, le=86400.0)
+
     data_dir: Path = Path("/data")
     tmp_dir: Path = Path("/tmp/hems_cache")
 
